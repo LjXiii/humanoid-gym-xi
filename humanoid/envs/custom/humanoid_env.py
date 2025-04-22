@@ -270,16 +270,18 @@ class XBotLFreeEnv(LeggedRobot):
 
 # ================================================ Rewards ================================================== #
     def _reward_joint_pos(self):
+        # 关节位置跟踪奖励，鼓励机器人跟踪基于步态生成的参考关节位置
         """
         Calculates the reward based on the difference between the current joint positions and the target joint positions.
         """
         joint_pos = self.dof_pos.clone()
         pos_target = self.ref_dof_pos.clone()
         diff = joint_pos - pos_target
-        r = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5)
+        r = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5) # 指数衰减和线性惩罚两部分组成奖励
         return r
 
     def _reward_feet_distance(self):
+        # 足部间距奖励，帮助维持适当的足部间距
         """
         Calculates the reward based on the distance between the feet. Penalize feet get close to each other or too far away.
         """
@@ -293,6 +295,7 @@ class XBotLFreeEnv(LeggedRobot):
 
 
     def _reward_knee_distance(self):
+        # 膝盖间距奖励鼓励膝盖保持合理分开，避免碰撞或过度分开，促进正确的腿部姿势和对齐
         """
         Calculates the reward based on the distance between the knee of the humanoid.
         """
@@ -306,18 +309,20 @@ class XBotLFreeEnv(LeggedRobot):
 
 
     def _reward_foot_slip(self):
+        # 足部滑动惩罚
         """
         Calculates the reward for minimizing foot slip. The reward is based on the contact forces 
         and the speed of the feet. A contact threshold is used to determine if the foot is in contact 
         with the ground. The speed of the foot is calculated and scaled by the contact condition.
         """
-        contact = self.contact_forces[:, self.feet_indices, 2] > 5.
-        foot_speed_norm = torch.norm(self.rigid_state[:, self.feet_indices, 7:9], dim=2)
-        rew = torch.sqrt(foot_speed_norm)
+        contact = self.contact_forces[:, self.feet_indices, 2] > 5. # 检测脚部是否接触地面(垂直力>5N)
+        foot_speed_norm = torch.norm(self.rigid_state[:, self.feet_indices, 7:9], dim=2) # 计算接触时的脚部水平速度
+        rew = torch.sqrt(foot_speed_norm) # 速度越大，惩罚越大
         rew *= contact
         return torch.sum(rew, dim=1)    
 
     def _reward_feet_air_time(self):
+        # 足部离地时间奖励，鼓励机器人迈出更大、更有效的步伐
         """
         Calculates the reward for feet air time, promoting longer steps. This is achieved by
         checking the first contact with the ground after being in the air. The air time is
@@ -327,23 +332,25 @@ class XBotLFreeEnv(LeggedRobot):
         stance_mask = self._get_gait_phase()
         self.contact_filt = torch.logical_or(torch.logical_or(contact, stance_mask), self.last_contacts)
         self.last_contacts = contact
-        first_contact = (self.feet_air_time > 0.) * self.contact_filt
+        first_contact = (self.feet_air_time > 0.) * self.contact_filt # 当脚部首次接触地面时给予奖励，奖励大小与离地时间成正比
         self.feet_air_time += self.dt
-        air_time = self.feet_air_time.clamp(0, 0.5) * first_contact
+        air_time = self.feet_air_time.clamp(0, 0.5) * first_contact # 设置0.5秒的上限，防止机器人过度优化单个步伐
         self.feet_air_time *= ~self.contact_filt
         return air_time.sum(dim=1)
 
     def _reward_feet_contact_number(self):
+        # 足部接触符合性奖励
         """
         Calculates a reward based on the number of feet contacts aligning with the gait phase. 
         Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
         """
-        contact = self.contact_forces[:, self.feet_indices, 2] > 5.
+        contact = self.contact_forces[:, self.feet_indices, 2] > 5. # 检测实际的脚部接触
         stance_mask = self._get_gait_phase()
-        reward = torch.where(contact == stance_mask, 1.0, -0.3)
+        reward = torch.where(contact == stance_mask, 1.0, -0.3) # 与基于相位的理想接触模式比较，当实际接触与预期接触匹配时，给予正奖励(1.0)
         return torch.mean(reward, dim=1)
 
     def _reward_orientation(self):
+        # 姿态维持奖励，奖励鼓励机器人保持直立姿势，通过欧拉角和重力投影两种方式评估姿态
         """
         Calculates the reward for maintaining a flat base orientation. It penalizes deviation 
         from the desired base orientation using the base euler angles and the projected gravity vector.
@@ -353,6 +360,7 @@ class XBotLFreeEnv(LeggedRobot):
         return (quat_mismatch + orientation) / 2.
 
     def _reward_feet_contact_forces(self):
+        # 计算脚部接触力的大小，当力超过阈值(max_contact_force=700N)时给予惩罚
         """
         Calculates the reward for keeping contact forces within a specified range. Penalizes
         high contact forces on the feet.
@@ -360,11 +368,13 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - self.cfg.rewards.max_contact_force).clip(0, 400), dim=1)
 
     def _reward_default_joint_pos(self):
+        # 默认关节位置奖励，使用指数奖励鼓励小偏差，线性惩罚大偏差
         """
         Calculates the reward for keeping joint positions close to default positions, with a focus 
         on penalizing deviation in yaw and roll directions. Excludes yaw and roll from the main penalty.
         """
         joint_diff = self.dof_pos - self.default_joint_pd_target
+        # 特别关注左右腿的yaw和roll关节（前两个和第6-8个关节）
         left_yaw_roll = joint_diff[:, :2]
         right_yaw_roll = joint_diff[:, 6: 8]
         yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
@@ -372,6 +382,7 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
 
     def _reward_base_height(self):
+        # 奖励鼓励机器人维持稳定的身体高度
         """
         Calculates the reward based on the robot's base height. Penalizes deviation from a target base height.
         The reward is computed based on the height difference between the robot's base and the average height 
@@ -384,6 +395,7 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.exp(-torch.abs(base_height - self.cfg.rewards.base_height_target) * 100)
 
     def _reward_base_acc(self):
+        # 加速度控制奖励
         """
         Computes the reward based on the base's acceleration. Penalizes high accelerations of the robot's base,
         encouraging smoother motion.
@@ -394,6 +406,7 @@ class XBotLFreeEnv(LeggedRobot):
 
 
     def _reward_vel_mismatch_exp(self):
+        # 控制非命令维度的速度奖励z方向线速度接近零，奖励x和y方向角速度接近零，鼓励水平稳定移动，防止弹跳、倾斜或翻滚
         """
         Computes a reward based on the mismatch in the robot's linear and angular velocities. 
         Encourages the robot to maintain a stable velocity by penalizing large deviations.
@@ -406,6 +419,7 @@ class XBotLFreeEnv(LeggedRobot):
         return c_update
 
     def _reward_track_vel_hard(self):
+        # 严格的速度跟踪奖励
         """
         Calculates a reward for accurately tracking both linear and angular velocity commands.
         Penalizes deviations from specified linear and angular velocity targets.
@@ -425,6 +439,7 @@ class XBotLFreeEnv(LeggedRobot):
         return (lin_vel_error_exp + ang_vel_error_exp) / 2. - linear_error
 
     def _reward_tracking_lin_vel(self):
+        # 计算实际线速度与命令线速度之间的平方误差
         """
         Tracks linear velocity commands along the xy axes. 
         Calculates a reward based on how closely the robot's linear velocity matches the commanded values.
@@ -434,6 +449,7 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
 
     def _reward_tracking_ang_vel(self):
+        # 计算实际yaw角速度与命令角速度的平方误差，控制机器人精准转向
         """
         Tracks angular velocity commands for yaw rotation.
         Computes a reward based on how closely the robot's angular velocity matches the commanded yaw values.
@@ -444,6 +460,7 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.exp(-ang_vel_error * self.cfg.rewards.tracking_sigma)
     
     def _reward_feet_clearance(self):
+        # 足部离地高度奖励跟踪摆动腿的高度变化，当高度接近目标高度时给予奖励，仅在摆动相(非支撑相)评估
         """
         Calculates reward based on the clearance of the swing leg from the ground during movement.
         Encourages appropriate lift of the feet during the swing phase of the gait.
@@ -467,6 +484,7 @@ class XBotLFreeEnv(LeggedRobot):
         return rew_pos
 
     def _reward_low_speed(self):
+        # 专注于速度大小和方向的匹配
         """
         Rewards or penalizes the robot based on its speed relative to the commanded speed. 
         This function checks if the robot is moving too slow, too fast, or at the desired speed, 
@@ -507,6 +525,7 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.sum(torch.square(self.torques), dim=1)
 
     def _reward_dof_vel(self):
+        # 关节速度惩罚
         """
         Penalizes high velocities at the degrees of freedom (DOF) of the robot. This encourages smoother and 
         more controlled movements.
@@ -514,6 +533,7 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.sum(torch.square(self.dof_vel), dim=1)
     
     def _reward_dof_acc(self):
+        # 关节加速度惩罚
         """
         Penalizes high accelerations at the robot's degrees of freedom (DOF). This is important for ensuring
         smooth and stable motion, reducing wear on the robot's mechanical parts.
@@ -521,6 +541,7 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
     
     def _reward_collision(self):
+        # 检测指定身体部位(penalised_contact_indices)的接触力，当接触力超过阈值(0.1N)时给予惩罚，防止机器人身体部分之间或与环境的碰撞
         """
         Penalizes collisions of the robot with the environment, specifically focusing on selected body parts.
         This encourages the robot to avoid undesired contact with objects or surfaces.
@@ -528,13 +549,14 @@ class XBotLFreeEnv(LeggedRobot):
         return torch.sum(1.*(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
     
     def _reward_action_smoothness(self):
+        # 动作平滑性奖励
         """
         Encourages smoothness in the robot's actions by penalizing large differences between consecutive actions.
         This is important for achieving fluid motion and reducing mechanical stress.
         """
         term_1 = torch.sum(torch.square(
-            self.last_actions - self.actions), dim=1)
+            self.last_actions - self.actions), dim=1) # 惩罚动作差
         term_2 = torch.sum(torch.square(
-            self.actions + self.last_last_actions - 2 * self.last_actions), dim=1)
-        term_3 = 0.05 * torch.sum(torch.abs(self.actions), dim=1)
+            self.actions + self.last_last_actions - 2 * self.last_actions), dim=1) # 动作加速度
+        term_3 = 0.05 * torch.sum(torch.abs(self.actions), dim=1) # 动作大小
         return term_1 + term_2 + term_3
