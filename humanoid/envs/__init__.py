@@ -39,8 +39,12 @@ from .custom.humanoid_env import XBotLFreeEnv
 from .custom.L1_config import L1BotCfg, L1BotCfgPPO
 from .custom.L1_env import L1BotFreeEnv
 
+from .custom.C02_config import C02Cfg, C02CfgPPO
+from .custom.C02_env import C02FreeEnv
+
 from humanoid.utils.task_registry import task_registry
 
 
 task_registry.register( "humanoid_ppo", XBotLFreeEnv, XBotLCfg(), XBotLCfgPPO() )
 task_registry.register( "L1Bot_ppo", L1BotFreeEnv, L1BotCfg(), L1BotCfgPPO() )
+task_registry.register( "C02_ppo", C02FreeEnv, C02Cfg(), C02CfgPPO() )

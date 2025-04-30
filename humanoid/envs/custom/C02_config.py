@@ -31,7 +31,7 @@
 from humanoid.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
 
-class L1BotCfg(LeggedRobotCfg):
+class C02Cfg(LeggedRobotCfg):
     """
     Configuration class for the XBotL humanoid robot.
     """
@@ -56,11 +56,11 @@ class L1BotCfg(LeggedRobotCfg):
         torque_limit = 0.85
 
     class asset(LeggedRobotCfg.asset):
-        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/L1/urdf/L1.urdf'
+        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/Casbot02/urdf/CASBOT02_LB.urdf'
 
-        name = "L13dof" # 为机器人模型指定的名称，用于在仿真环境中识别机器人实例
-        foot_name = "link_91" # "ankle_roll"链接（脚踝横滚关节）被指定为脚部
-        knee_name = "link_8" # 指定膝关节的链接名称，用于特定的控制和观察计算
+        name = "legged_02" # 为机器人模型指定的名称，用于在仿真环境中识别机器人实例
+        foot_name = "6_link" # "ankle_roll"链接（脚踝横滚关节）被指定为脚部
+        knee_name = "4_link" # 指定膝关节的链接名称，用于特定的控制和观察计算
 
         terminate_after_contacts_on = ['base_link'] # 定义哪些部位接触会导致回合终止
         penalize_contacts_on = ["base_link"] # 定义哪些部位接触会受到惩罚（负奖励）
@@ -102,18 +102,18 @@ class L1BotCfg(LeggedRobotCfg):
         pos = [0.0, 0.0, 1.1] # 机器人基座中心在世界坐标系中的初始位置
 
         default_joint_angles = {  # = target angles [rad] when action = 0.0
-            'left_joint_5': 0., # leg roll
-            'left_joint_6': 0., # leg pitch
-            'left_joint_7': 0., # leg yaw
-            'left_joint_8': 0., # knee pitch 
-            'left_joint_9': 0., # ankle roll
-            'left_joint_91': 0., # ankle pitch
-            'right_joint_5': 0.,
-            'right_joint_6': 0.,
-            'right_joint_7': 0.,
-            'right_joint_8': 0.,
-            'right_joint_9': 0.,
-            'right_joint_91': 0.,
+            'leg_l1_joint': 0., # leg roll
+            'leg_l2_joint': 0., # leg pitch
+            'leg_l3_joint': 0., # leg yaw
+            'leg_l4_joint': 0., # knee pitch 
+            'leg_l5_joint': 0., # ankle roll
+            'leg_l6_joint': 0., # ankle pitch
+            'leg_r1_joint': 0., 
+            'leg_r2_joint': 0., 
+            'leg_r3_joint': 0.,
+            'leg_r4_joint': 0., 
+            'leg_r5_joint': 0., 
+            'leg_r6_joint': 0.,
         }
     # 在这个配置中，所有关节的默认角度都设为0 --> 双腿垂直向下，膝盖完全伸直，脚踝使脚底与地面平行
     # 这是自然的站立姿势，但在实际训练中，可能会稍微调整这些值，比如微弯膝盖，以实现更稳定的初始状态
@@ -122,14 +122,14 @@ class L1BotCfg(LeggedRobotCfg):
         # PD (Proportional-Derivative) 控制器用于将智能体的动作（目标关节角度）转换为关节扭矩
         # 公式：torque = P * (target_position - current_position) - D * current_velocity
         # PD Drive parameters:
-        stiffness = {'left_joint_5': 200.0, 'left_joint_6': 350.0, 'left_joint_7': 200.0,
-                     'left_joint_8': 350.0, 'left_joint_9': 250, 'left_joint_91': 15, 
-                     'right_joint_5': 200.0, 'right_joint_6': 350.0, 'right_joint_7': 200.0,
-                     'right_joint_8': 350.0, 'right_joint_9': 250, 'right_joint_91': 15}
-        damping = {'left_joint_5': 10, 'left_joint_6': 10, 'left_joint_7': 10,
-                     'left_joint_8': 10, 'left_joint_9': 10, 'left_joint_91': 10, 
-                     'right_joint_5': 10, 'right_joint_6': 10, 'right_joint_7': 10,
-                     'right_joint_8': 10, 'right_joint_9': 10, 'right_joint_91': 10}
+        stiffness = {'leg_l1_joint': 200.0, 'leg_l2_joint': 350.0, 'leg_l3_joint': 200.0,
+                     'leg_l4_joint': 350.0, 'leg_l5_joint': 250, 'leg_l6_joint': 15, 
+                     'leg_r1_joint': 200.0, 'leg_r2_joint': 350.0, 'leg_r3_joint': 200.0,
+                     'leg_r4_joint': 350.0, 'leg_r5_joint': 250, 'leg_r6_joint': 15}
+        damping = {'leg_l1_joint': 10, 'leg_l2_joint': 10, 'leg_l3_joint': 10,
+                     'leg_l4_joint': 10, 'leg_l5_joint': 10, 'leg_l6_joint': 10, 
+                     'leg_r1_joint': 10, 'leg_r2_joint': 10, 'leg_r3_joint': 10,
+                     'leg_r4_joint': 10, 'leg_r5_joint': 10, 'leg_r6_joint': 10}
 
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25 # 0.25意味着动作空间被映射到±0.25弧度的范围（约±14.3度），更精细的控制，更平滑的运动，减少极端动作导致的不稳定性
@@ -239,7 +239,7 @@ class L1BotCfg(LeggedRobotCfg):
         # 防止极端值影响训练稳
 
 
-class L1BotCfgPPO(LeggedRobotCfgPPO):
+class C02CfgPPO(LeggedRobotCfgPPO):
     seed = 5
     runner_class_name = 'OnPolicyRunner'   # DWLOnPolicyRunner
 
@@ -264,7 +264,7 @@ class L1BotCfgPPO(LeggedRobotCfgPPO):
 
         # logging
         save_interval = 100  # Please check for potential savings every `save_interval` iterations. 每100次迭代保存一次模型
-        experiment_name = 'L1Bot_ppo'
+        experiment_name = '02Bot_ppo'
         run_name = ''
         # Load and resume
         resume = False
