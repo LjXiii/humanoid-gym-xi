@@ -374,7 +374,7 @@ class XBotLFreeEnv(LeggedRobot):
         on penalizing deviation in yaw and roll directions. Excludes yaw and roll from the main penalty.
         """
         joint_diff = self.dof_pos - self.default_joint_pd_target
-        # 特别关注左右腿的yaw和roll关节（前两个和第6-8个关节）
+        # 特别关注左右腿的yaw和roll关节
         left_yaw_roll = joint_diff[:, :2]
         right_yaw_roll = joint_diff[:, 6: 8]
         yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)

@@ -128,16 +128,18 @@ class C02FreeEnv(LeggedRobot):
         scale_2 = 2 * scale_1
         # left foot stance phase set to default joint pos
         sin_pos_l[sin_pos_l > 0] = 0
-        self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
-        self.ref_dof_pos[:, 3] = sin_pos_l * scale_2
-        self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
+        sin_pos_l[torch.abs(sin_pos) < 0.1] = 0 
+        self.ref_dof_pos[:, 0] = sin_pos_l * scale_1 + self.cfg.init_state.default_joint_angles['leg_l1_joint']
+        self.ref_dof_pos[:, 3] = sin_pos_l * scale_2 + self.cfg.init_state.default_joint_angles['leg_l4_joint']
+        self.ref_dof_pos[:, 4] = sin_pos_l * scale_1 + self.cfg.init_state.default_joint_angles['leg_l5_joint']
         # right foot stance phase set to default joint pos
         sin_pos_r[sin_pos_r < 0] = 0
-        self.ref_dof_pos[:, 8] = sin_pos_r * scale_1
-        self.ref_dof_pos[:, 9] = sin_pos_r * scale_2
-        self.ref_dof_pos[:, 10] = sin_pos_r * scale_1
+        sin_pos_r[torch.abs(sin_pos) < 0.1] = 0 
+        self.ref_dof_pos[:, 6] = sin_pos_r * scale_1 + self.cfg.init_state.default_joint_angles['leg_r1_joint']
+        self.ref_dof_pos[:, 9] = sin_pos_r * scale_2 + self.cfg.init_state.default_joint_angles['leg_r4_joint']
+        self.ref_dof_pos[:, 10] = sin_pos_r * scale_1 + self.cfg.init_state.default_joint_angles['leg_r5_joint']
         # Double support phase
-        self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0
+        # self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0
 
         self.ref_action = 2 * self.ref_dof_pos
 
@@ -285,8 +287,8 @@ class C02FreeEnv(LeggedRobot):
         """
         Calculates the reward based on the distance between the feet. Penalize feet get close to each other or too far away.
         """
-        foot_pos = self.rigid_state[:, self.feet_indices, :2]
-        foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1)
+        foot_pos = self.rigid_state[:, self.feet_indices, :2] # x y方向的距离，feet_indices索引到脚部
+        foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1) # (num_envs, 2)
         fd = self.cfg.rewards.min_dist
         max_df = self.cfg.rewards.max_dist
         d_min = torch.clamp(foot_dist - fd, -0.5, 0.)
@@ -318,6 +320,8 @@ class C02FreeEnv(LeggedRobot):
         contact = self.contact_forces[:, self.feet_indices, 2] > 5. # 检测脚部是否接触地面(垂直力>5N)
         foot_speed_norm = torch.norm(self.rigid_state[:, self.feet_indices, 7:9], dim=2) # 计算接触时的脚部水平速度
         rew = torch.sqrt(foot_speed_norm) # 速度越大，惩罚越大
+        # 对于低速滑动，平方根函数增加的惩罚较快，能够更敏感地响应小幅滑动，这有助于及时纠正和防止滑动
+        # 对于高速滑动，平方根函数的惩罚增长较慢，避免了在机器人脚部滑动过快时给予过大的惩罚，从而防止训练过程中的震荡和不稳定
         rew *= contact
         return torch.sum(rew, dim=1)    
 
@@ -329,17 +333,17 @@ class C02FreeEnv(LeggedRobot):
         limited to a maximum value for reward calculation.
         """
         contact = self.contact_forces[:, self.feet_indices, 2] > 5.
-        stance_mask = self._get_gait_phase()
-        self.contact_filt = torch.logical_or(torch.logical_or(contact, stance_mask), self.last_contacts)
-        self.last_contacts = contact
-        first_contact = (self.feet_air_time > 0.) * self.contact_filt # 当脚部首次接触地面时给予奖励，奖励大小与离地时间成正比
+        stance_mask = self._get_gait_phase() # 步态相位判定，获取当前步态周期中每只脚的支撑/摆动相位
+        self.contact_filt = torch.logical_or(torch.logical_or(contact, stance_mask), self.last_contacts) # 过滤和识别脚部首次接触地面的条件
+        self.last_contacts = contact # 记录上一时间步中脚部的接触状态，以辅助判断首次接触
+        first_contact = (self.feet_air_time > 0.) * self.contact_filt # 确定脚部是否首次接触地面，并依据离地时间给予奖励
         self.feet_air_time += self.dt
         air_time = self.feet_air_time.clamp(0, 0.5) * first_contact # 设置0.5秒的上限，防止机器人过度优化单个步伐
-        self.feet_air_time *= ~self.contact_filt
+        self.feet_air_time *= ~self.contact_filt # 当脚部接触地面时，通过逻辑非操作，将相应的离地时间重置为零
         return air_time.sum(dim=1)
 
     def _reward_feet_contact_number(self):
-        # 足部接触符合性奖励
+        # 足部接触符合性奖励，当脚部的实际接触状态与预期的步态相位相同时，给予正奖励
         """
         Calculates a reward based on the number of feet contacts aligning with the gait phase. 
         Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
@@ -355,8 +359,8 @@ class C02FreeEnv(LeggedRobot):
         Calculates the reward for maintaining a flat base orientation. It penalizes deviation 
         from the desired base orientation using the base euler angles and the projected gravity vector.
         """
-        quat_mismatch = torch.exp(-torch.sum(torch.abs(self.base_euler_xyz[:, :2]), dim=1) * 10)
-        orientation = torch.exp(-torch.norm(self.projected_gravity[:, :2], dim=1) * 20)
+        quat_mismatch = torch.exp(-torch.sum(torch.abs(self.base_euler_xyz[:, :2]), dim=1) * 10) # 通过减少基座欧拉角的绝对值，鼓励机器人保持水平姿态
+        orientation = torch.exp(-torch.norm(self.projected_gravity[:, :2], dim=1) * 20) # 确保机器人基座的重力向量与预期方向一致，进一步保证姿态稳定
         return (quat_mismatch + orientation) / 2.
 
     def _reward_feet_contact_forces(self):
@@ -366,17 +370,20 @@ class C02FreeEnv(LeggedRobot):
         high contact forces on the feet.
         """
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - self.cfg.rewards.max_contact_force).clip(0, 400), dim=1)
-
+        # dim=-1 在最后一个维度上计算，就是计算接触力的三个分量xyz
+        # dim=1 在第二个维度上进行求和，将所有脚部的超出部分加总，得到每个环境的总惩罚值
+        
     def _reward_default_joint_pos(self):
         # 默认关节位置奖励，使用指数奖励鼓励小偏差，线性惩罚大偏差
+        # 确保机器人关节尽量保持在默认位置，特别是yaw和roll关节，以维持稳定性和避免不必要的姿态变化
         """
         Calculates the reward for keeping joint positions close to default positions, with a focus 
         on penalizing deviation in yaw and roll directions. Excludes yaw and roll from the main penalty.
         """
         joint_diff = self.dof_pos - self.default_joint_pd_target
-        # 特别关注左右腿的yaw和roll关节（前两个和第6-8个关节）
-        left_yaw_roll = joint_diff[:, :2]
-        right_yaw_roll = joint_diff[:, 6: 8]
+        # 特别关注左右腿的yaw和roll关节
+        left_yaw_roll = joint_diff[:, 1: 3]
+        right_yaw_roll = joint_diff[:, 7: 9]
         yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
         yaw_roll = torch.clamp(yaw_roll - 0.1, 0, 50)
         return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
@@ -388,6 +395,9 @@ class C02FreeEnv(LeggedRobot):
         The reward is computed based on the height difference between the robot's base and the average height 
         of its feet when they are in contact with the ground.
         """
+        # 通过测量支撑脚的平均 z 坐标，可以动态地估计当前地面的高度，特别是在不平坦地形上
+        # 支撑脚的平均高度（measured_heights）代表当前环境中地面的高度
+        # 绝对高度 - (支撑脚的平均高度（measured_heights）代表当前环境中地面的高度)
         stance_mask = self._get_gait_phase()
         measured_heights = torch.sum(
             self.rigid_state[:, self.feet_indices, 2] * stance_mask, dim=1) / torch.sum(stance_mask, dim=1)
@@ -395,7 +405,7 @@ class C02FreeEnv(LeggedRobot):
         return torch.exp(-torch.abs(base_height - self.cfg.rewards.base_height_target) * 100)
 
     def _reward_base_acc(self):
-        # 加速度控制奖励
+        # 限制基座的加速度，避免过大的加速度导致机器人动作不平滑或机械结构受损
         """
         Computes the reward based on the base's acceleration. Penalizes high accelerations of the robot's base,
         encouraging smoother motion.
@@ -406,7 +416,7 @@ class C02FreeEnv(LeggedRobot):
 
 
     def _reward_vel_mismatch_exp(self):
-        # 控制非命令维度的速度奖励z方向线速度接近零，奖励x和y方向角速度接近零，鼓励水平稳定移动，防止弹跳、倾斜或翻滚
+        # 确保机器人在命令的方向（通常为x和y轴）外保持低速，减少不必要的侧向或垂直运动，提高稳定性
         """
         Computes a reward based on the mismatch in the robot's linear and angular velocities. 
         Encourages the robot to maintain a stable velocity by penalizing large deviations.

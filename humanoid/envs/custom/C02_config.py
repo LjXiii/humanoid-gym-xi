@@ -99,20 +99,20 @@ class C02Cfg(LeggedRobotCfg):
             height_measurements = 0.1 # 添加到高度测量的噪声量，可能用于模拟地形感知或身体高度估计的噪声
 
     class init_state(LeggedRobotCfg.init_state):
-        pos = [0.0, 0.0, 1.1] # 机器人基座中心在世界坐标系中的初始位置
+        pos = [0.0, 0.0, 0.95] # 机器人基座中心在世界坐标系中的初始位置
 
         default_joint_angles = {  # = target angles [rad] when action = 0.0
-            'leg_l1_joint': 0., # leg roll
-            'leg_l2_joint': 0., # leg pitch
+            'leg_l1_joint': -5.16791005e-01, # leg pitch
+            'leg_l2_joint': 0., # leg roll
             'leg_l3_joint': 0., # leg yaw
-            'leg_l4_joint': 0., # knee pitch 
-            'leg_l5_joint': 0., # ankle roll
-            'leg_l6_joint': 0., # ankle pitch
-            'leg_r1_joint': 0., 
+            'leg_l4_joint': 1.00567752e+00, # knee pitch 
+            'leg_l5_joint': -4.88879716e-01, # ankle pitch
+            'leg_l6_joint': 0., # ankle roll
+            'leg_r1_joint': -5.16791005e-01, 
             'leg_r2_joint': 0., 
             'leg_r3_joint': 0.,
-            'leg_r4_joint': 0., 
-            'leg_r5_joint': 0., 
+            'leg_r4_joint': 1.00567752e+00, 
+            'leg_r5_joint': -4.88879716e-01, 
             'leg_r6_joint': 0.,
         }
     # 在这个配置中，所有关节的默认角度都设为0 --> 双腿垂直向下，膝盖完全伸直，脚踝使脚底与地面平行
@@ -122,10 +122,10 @@ class C02Cfg(LeggedRobotCfg):
         # PD (Proportional-Derivative) 控制器用于将智能体的动作（目标关节角度）转换为关节扭矩
         # 公式：torque = P * (target_position - current_position) - D * current_velocity
         # PD Drive parameters:
-        stiffness = {'leg_l1_joint': 200.0, 'leg_l2_joint': 350.0, 'leg_l3_joint': 200.0,
-                     'leg_l4_joint': 350.0, 'leg_l5_joint': 250, 'leg_l6_joint': 15, 
-                     'leg_r1_joint': 200.0, 'leg_r2_joint': 350.0, 'leg_r3_joint': 200.0,
-                     'leg_r4_joint': 350.0, 'leg_r5_joint': 250, 'leg_r6_joint': 15}
+        stiffness = {'leg_l1_joint': 350.0, 'leg_l2_joint': 200.0, 'leg_l3_joint': 200.0,
+                     'leg_l4_joint': 350.0, 'leg_l5_joint': 15, 'leg_l6_joint': 15, 
+                     'leg_r1_joint': 350.0, 'leg_r2_joint': 200.0, 'leg_r3_joint': 200.0,
+                     'leg_r4_joint': 350.0, 'leg_r5_joint': 15, 'leg_r6_joint': 15}
         damping = {'leg_l1_joint': 10, 'leg_l2_joint': 10, 'leg_l3_joint': 10,
                      'leg_l4_joint': 10, 'leg_l5_joint': 10, 'leg_l6_joint': 10, 
                      'leg_r1_joint': 10, 'leg_r2_joint': 10, 'leg_r3_joint': 10,
@@ -182,7 +182,7 @@ class C02Cfg(LeggedRobotCfg):
             heading = [-3.14, 3.14]
 
     class rewards:
-        base_height_target = 0.89 # 理想的机器人基座高度（米）
+        base_height_target = 0.9244 # 理想的机器人基座高度（米）0.89
         min_dist = 0.2 # 最小足部/膝盖间距（米）
         max_dist = 0.5 # 最大足部间距（米）
         # put some settings here for LLM parameter tuning
